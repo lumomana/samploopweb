@@ -1,0 +1,27 @@
+<!--
+Style reminder — Samploop / document HTML
+Typographie de console éditoriale : Barlow Condensed pour l’affichage, IBM Plex pour la lecture et les métriques.
+Le document doit refléter un outil musical sombre, précis et contemporain.
+-->
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta
+      name="description"
+      content="Samploop est une application web de looping musical avec bibliothèque de samples, 9 pistes simultanées et contrôle d’effets." />
+    <title>Samploop — looping musical par samples</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script
+      defer
+      src="%VITE_ANALYTICS_ENDPOINT%/umami"
+      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
+  </body>
+</html>
