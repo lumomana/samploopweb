@@ -8,8 +8,7 @@ type UseAuthOptions = {
   redirectPath?: string;
 };
 
-const DEV_BYPASS =
-  import.meta.env.DEV && !import.meta.env.VITE_OAUTH_SERVER_URL;
+const DEV_BYPASS = !import.meta.env.VITE_OAUTH_SERVER_URL;
 
 const DEV_USER = {
   id: 0,
