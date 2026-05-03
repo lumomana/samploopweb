@@ -279,9 +279,8 @@ export default function Home() {
   const handleImportClick = () => {
     if (authLoading) return;
     if (!isAuthenticated) {
-      toast.info(t("loginToImport"));
-      window.location.href = getLoginUrl();
-      return;
+  window.location.href = "/auth/github";
+  return;
     }
     inputRef.current?.click();
   };
