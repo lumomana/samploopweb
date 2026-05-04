@@ -63,8 +63,8 @@ export function registerGitHubAuthRoutes(app: Express) {
 
       // Créer le cookie de session JWT
       const sessionToken = await sdk.createSessionToken(openId, { name });
-      const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, cookieOptions);
+     const cookieOptions = getSessionCookieOptions(req);
+res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, secure: true });
 
       res.redirect("/");
     } catch (error) {
