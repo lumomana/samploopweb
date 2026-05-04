@@ -442,10 +442,21 @@ export default function Home() {
 
           <div className="library-toolbar">
             <input ref={inputRef} type="file" accept=".wav,.mp3,.ogg,.webm,audio/*" hidden onChange={handleFileSelection} />
-            <button className="action-pill primary-pill" type="button" onClick={handleImportClick} disabled={importMutation.isPending}>
-              <Upload size={15} />
-              {importMutation.isPending ? t("importing") : t("importSound")}
-            </button>
+            {isAuthenticated ? (
+              <button className="action-pill primary-pill" type="button" onClick={handleImportClick} disabled={importMutation.isPending}>
+                <Upload size={15} />
+                {importMutation.isPending ? t("importing") : t("importSound")}
+              </button>
+            ) : (
+              <a
+                href="/auth/github"
+                className="action-pill primary-pill"
+                style={{ display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}
+              >
+                <Upload size={15} />
+                Se connecter
+              </a>
+            )}
             <button className="action-pill" type="button">
               A–Z
             </button>
