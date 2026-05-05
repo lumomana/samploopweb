@@ -12,7 +12,7 @@ const APP_URL = process.env.APP_URL || "https://samploopweb-production.up.railwa
 
 export function registerGitHubAuthRoutes(app: Express) {
   // Étape 1 — Rediriger vers GitHub
-  app.get("/auth/github", (_req, res) => {
+  app.get("/auth/github", async (req, res) => {
     const params = new URLSearchParams({
       client_id: GITHUB_CLIENT_ID,
       redirect_uri: `${APP_URL}/auth/github/callback`,
@@ -22,7 +22,7 @@ export function registerGitHubAuthRoutes(app: Express) {
   });
 
   // Étape 2 — Callback GitHub → créer session
-  app.get("/auth/github/", async (req, res) => {
+  app.get("/auth/github/callback", async (req, res) => {
     const code = req.query.code as string;
     if (!code) return res.redirect("/?error=missing_code");
 
