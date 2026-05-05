@@ -22,7 +22,7 @@ export function registerGitHubAuthRoutes(app: Express) {
   });
 
   // Étape 2 — Callback GitHub → créer session
-  app.get("/auth/github/callback", async (req, res) => {
+  app.get("/auth/github/", async (req, res) => {
     const code = req.query.code as string;
     if (!code) return res.redirect("/?error=missing_code");
 
