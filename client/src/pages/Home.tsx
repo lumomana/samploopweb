@@ -146,12 +146,21 @@ export default function Home() {
   const { locale, locales, localeMeta, setLocale, t } = useLanguage();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const trpcUtils = trpc.useUtils();
+  // Session ID local — identifiant unique par navigateur, stocké en localStorage
+  const [sessionId] = useState<string>(() => {
+    if (typeof window === "undefined") return crypto.randomUUID();
+    const stored = localStorage.getItem("samploop_session_id");
+    if (stored) return stored;
+    const id = crypto.randomUUID();
+    localStorage.setItem("samploop_session_id", id);
+    return id;
+  });
   const [query, setQuery] = useState("");
   const [selectedTrack, setSelectedTrack] = useState<number>(1);
   const [effectsTrackId, setEffectsTrackId] = useState<number | null>(null);
   const [tracks, setTracks] = useState<TrackState[]>(() => trackColors.map((color, index) => createEmptyTrack(index + 1, color)));
 
-  const libraryQuery = trpc.library.list.useQuery(undefined, {
+  const libraryQuery = trpc.library.list.useQuery({ sessionId }, {
     staleTime: 20_000,
   });
 
@@ -277,11 +286,6 @@ export default function Home() {
   );
 
   const handleImportClick = () => {
-    if (authLoading) return;
-    if (!isAuthenticated) {
-  window.location.href = "/auth/github";
-  return;
-    }
     inputRef.current?.click();
   };
 
@@ -312,6 +316,7 @@ export default function Home() {
           const durationMs = Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : 1000;
 
           await importMutation.mutateAsync({
+            sessionId,
             name: file.name.replace(/\.[^.]+$/, ""),
             category: "Imported",
             mimeType: file.type,
@@ -333,6 +338,7 @@ export default function Home() {
         "error",
         async () => {
           await importMutation.mutateAsync({
+            sessionId,
             name: file.name.replace(/\.[^.]+$/, ""),
             category: "Imported",
             mimeType: file.type,
@@ -442,21 +448,10 @@ export default function Home() {
 
           <div className="library-toolbar">
             <input ref={inputRef} type="file" accept=".wav,.mp3,.ogg,.webm,audio/*" hidden onChange={handleFileSelection} />
-            {isAuthenticated ? (
-              <button className="action-pill primary-pill" type="button" onClick={handleImportClick} disabled={importMutation.isPending}>
-                <Upload size={15} />
-                {importMutation.isPending ? t("importing") : t("importSound")}
-              </button>
-            ) : (
-              <a
-                href="/auth/github"
-                className="action-pill primary-pill"
-                style={{ display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}
-              >
-                <Upload size={15} />
-                Se connecter
-              </a>
-            )}
+            <button className="action-pill primary-pill" type="button" onClick={handleImportClick} disabled={importMutation.isPending}>
+              <Upload size={15} />
+              {importMutation.isPending ? t("importing") : t("importSound")}
+            </button>
             <button className="action-pill" type="button">
               A–Z
             </button>
