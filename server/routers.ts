@@ -2,7 +2,6 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
-import { storagePut } from "./storage";
 
 const MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
 const allowedAudioMimeTypes = {
@@ -14,7 +13,6 @@ const allowedAudioMimeTypes = {
   "audio/webm": "webm",
 } as const;
 
-// Bibliothèque de samples seeded (toujours disponibles)
 const seededSamples = [
   { id: "a1", name: "Amber Kick Loop",    color: "#f59e0b", category: "Drums",   bpm: 120, durationMs: 8000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/amber-kick-loop.wav",    sortName: "amber kick loop",    mimeType: "audio/wav", byteSize: 0, dominantColor: "#f59e0b", waveformPreview: null, originalFileName: "amber-kick-loop.wav",    ownerUserId: null, libraryStatus: "ready" },
   { id: "b0", name: "Birds",              color: "#4ade80", category: "Nature",  bpm: 0,   durationMs: 12000, isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/birds.wav",               sortName: "birds",              mimeType: "audio/wav", byteSize: 0, dominantColor: "#4ade80", waveformPreview: null, originalFileName: "birds.wav",               ownerUserId: null, libraryStatus: "ready" },
@@ -31,16 +29,14 @@ const seededSamples = [
   { id: "b3", name: "Wave Ribbon Lead",   color: "#38bdf8", category: "Lead",    bpm: 128, durationMs: 8000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/wave-ribbon-lead.wav",    sortName: "wave ribbon lead",   mimeType: "audio/wav", byteSize: 0, dominantColor: "#38bdf8", waveformPreview: null, originalFileName: "wave-ribbon-lead.wav",    ownerUserId: null, libraryStatus: "ready" },
 ];
 
-// Sessions en mémoire (temporaires, nettoyées après 24h)
-const sessionSamples = new Map<string, typeof seededSamples>();
+// Stockage en mémoire : sessionId → liste de samples avec leur audio en base64
+type MemorySample = typeof seededSamples[0] & { audioData?: string; audioMimeType?: string };
+const sessionSamples = new Map<string, MemorySample[]>();
+// Export pour que le serveur Express puisse servir les fichiers audio
+export const sessionAudioStore = sessionSamples;
 
 function sanitizeFileStem(fileName: string) {
-  return fileName
-    .toLowerCase()
-    .replace(/\.[a-z0-9]+$/i, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
+  return fileName.toLowerCase().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
 
 function getExtensionForMimeType(mimeType: string) {
@@ -50,7 +46,6 @@ function getExtensionForMimeType(mimeType: string) {
 export const appRouter = router({
   system: systemRouter,
 
-  // Auth simplifié — pas de vrai login, juste null
   auth: router({
     me: publicProcedure.query(() => null),
     logout: publicProcedure.mutation(() => ({ success: true } as const)),
@@ -63,7 +58,6 @@ export const appRouter = router({
         const sessionId = input?.sessionId;
         const userSamples = sessionId ? (sessionSamples.get(sessionId) ?? []) : [];
         const allSamples = [...seededSamples, ...userSamples];
-
         return {
           samples: allSamples,
           usage: {
@@ -73,6 +67,16 @@ export const appRouter = router({
           },
           reservedShare: { seeded: 0.33, user: 0.67 },
         };
+      }),
+
+    // Servir le fichier audio depuis la mémoire
+    getAudio: publicProcedure
+      .input(z.object({ sessionId: z.string(), sampleId: z.string() }))
+      .query(({ input }) => {
+        const samples = sessionSamples.get(input.sessionId) ?? [];
+        const sample = samples.find(s => s.id === input.sampleId);
+        if (!sample?.audioData) throw new TRPCError({ code: "NOT_FOUND", message: "Sample not found" });
+        return { audioData: sample.audioData, mimeType: sample.audioMimeType ?? "audio/wav" };
       }),
 
     importBase64: publicProcedure
@@ -93,24 +97,18 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         const extension = getExtensionForMimeType(input.mimeType);
-        if (!extension) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Format audio non pris en charge. Utilisez wav, mp3, ogg ou webm.",
-          });
-        }
+        if (!extension) throw new TRPCError({ code: "BAD_REQUEST", message: "Format non supporté." });
 
         const buffer = Buffer.from(input.base64Data, "base64");
         if (!buffer.byteLength) throw new TRPCError({ code: "BAD_REQUEST", message: "Fichier vide." });
         if (buffer.byteLength > MAX_UPLOAD_BYTES) throw new TRPCError({ code: "BAD_REQUEST", message: "Fichier trop grand (max 24 Mo)." });
 
-        const stem = sanitizeFileStem(input.originalFileName || input.name) || "sample";
-        const fileKey = `temp/${input.sessionId}/${crypto.randomUUID().slice(0, 8)}-${stem}.${extension}`;
+        const sampleId = crypto.randomUUID();
+        // L'URL pointe vers notre propre endpoint qui sert le fichier depuis la mémoire
+        const fileUrl = `/api/audio/${input.sessionId}/${sampleId}`;
 
-        const upload = await storagePut(fileKey, buffer, input.mimeType);
-
-        const newSample = {
-          id: crypto.randomUUID(),
+        const newSample: MemorySample = {
+          id: sampleId,
           name: input.name,
           color: input.dominantColor ?? "#f59e0b",
           category: input.category,
@@ -118,8 +116,8 @@ export const appRouter = router({
           durationMs: input.durationMs,
           isLoop: input.isLoop,
           sourceKind: "user_upload",
-          fileUrl: upload.url,
-          fileKey: upload.key,
+          fileUrl,
+          fileKey: fileUrl,
           sortName: input.name.toLowerCase(),
           mimeType: input.mimeType,
           byteSize: buffer.byteLength,
@@ -128,19 +126,20 @@ export const appRouter = router({
           originalFileName: input.originalFileName,
           ownerUserId: null,
           libraryStatus: "ready",
+          audioData: input.base64Data,
+          audioMimeType: input.mimeType,
         };
 
-        // Stocker en mémoire pour cette session
         const existing = sessionSamples.get(input.sessionId) ?? [];
         sessionSamples.set(input.sessionId, [...existing, newSample]);
 
-        // Nettoyage automatique après 24h
+        // Nettoyage après 24h
         setTimeout(() => {
           const current = sessionSamples.get(input.sessionId) ?? [];
-          sessionSamples.set(input.sessionId, current.filter(s => s.id !== newSample.id));
+          sessionSamples.set(input.sessionId, current.filter(s => s.id !== sampleId));
         }, 24 * 60 * 60 * 1000);
 
-        return { sample: newSample, uploaded: true };
+        return { sample: { ...newSample, audioData: undefined }, uploaded: true };
       }),
   }),
 });
