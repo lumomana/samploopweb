@@ -1,16 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { COOKIE_NAME } from "@shared/const";
-import {
-  createPendingAudioSample,
-  deleteAudioSample,
-  finalizePendingAudioSampleStorage,
-  getLibraryUsage,
-  listLibrarySamples,
-} from "./db";
-import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
 
 const MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
@@ -23,13 +14,25 @@ const allowedAudioMimeTypes = {
   "audio/webm": "webm",
 } as const;
 
-function normalizeSortName(name: string) {
-  return name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
+// Bibliothèque de samples seeded (toujours disponibles)
+const seededSamples = [
+  { id: "a1", name: "Amber Kick Loop",    color: "#f59e0b", category: "Drums",   bpm: 120, durationMs: 8000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/amber-kick-loop.wav",    sortName: "amber kick loop",    mimeType: "audio/wav", byteSize: 0, dominantColor: "#f59e0b", waveformPreview: null, originalFileName: "amber-kick-loop.wav",    ownerUserId: null, libraryStatus: "ready" },
+  { id: "b0", name: "Birds",              color: "#4ade80", category: "Nature",  bpm: 0,   durationMs: 12000, isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/birds.wav",               sortName: "birds",              mimeType: "audio/wav", byteSize: 0, dominantColor: "#4ade80", waveformPreview: null, originalFileName: "birds.wav",               ownerUserId: null, libraryStatus: "ready" },
+  { id: "a2", name: "Blue Grain Pad",     color: "#60a5fa", category: "Texture", bpm: 84,  durationMs: 11000, isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/blue-grain-pad.wav",      sortName: "blue grain pad",     mimeType: "audio/wav", byteSize: 0, dominantColor: "#60a5fa", waveformPreview: null, originalFileName: "blue-grain-pad.wav",      ownerUserId: null, libraryStatus: "ready" },
+  { id: "a3", name: "Coral Vox Chop",     color: "#fb7185", category: "Voice",   bpm: 96,  durationMs: 6000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/coral-vox-chop.wav",      sortName: "coral vox chop",     mimeType: "audio/wav", byteSize: 0, dominantColor: "#fb7185", waveformPreview: null, originalFileName: "coral-vox-chop.wav",      ownerUserId: null, libraryStatus: "ready" },
+  { id: "a4", name: "Crystal Click Hat",  color: "#67e8f9", category: "Perc",    bpm: 132, durationMs: 5000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/crystal-click-hat.wav",   sortName: "crystal click hat",  mimeType: "audio/wav", byteSize: 0, dominantColor: "#67e8f9", waveformPreview: null, originalFileName: "crystal-click-hat.wav",   ownerUserId: null, libraryStatus: "ready" },
+  { id: "a5", name: "Forest Drone C",     color: "#4ade80", category: "Drone",   bpm: 70,  durationMs: 14000, isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/forest-drone-c.wav",      sortName: "forest drone c",     mimeType: "audio/wav", byteSize: 0, dominantColor: "#4ade80", waveformPreview: null, originalFileName: "forest-drone-c.wav",      ownerUserId: null, libraryStatus: "ready" },
+  { id: "a6", name: "Golden Pulse Bass",  color: "#facc15", category: "Bass",    bpm: 102, durationMs: 7000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/golden-pulse-bass.wav",   sortName: "golden pulse bass",  mimeType: "audio/wav", byteSize: 0, dominantColor: "#facc15", waveformPreview: null, originalFileName: "golden-pulse-bass.wav",   ownerUserId: null, libraryStatus: "ready" },
+  { id: "a7", name: "Lilac Tape Snare",   color: "#c084fc", category: "Drums",   bpm: 118, durationMs: 4000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/lilac-tape-snare.wav",    sortName: "lilac tape snare",   mimeType: "audio/wav", byteSize: 0, dominantColor: "#c084fc", waveformPreview: null, originalFileName: "lilac-tape-snare.wav",    ownerUserId: null, libraryStatus: "ready" },
+  { id: "a8", name: "Mint Bell Loop",     color: "#2dd4bf", category: "Melody",  bpm: 90,  durationMs: 9000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/mint-bell-loop.wav",      sortName: "mint bell loop",     mimeType: "audio/wav", byteSize: 0, dominantColor: "#2dd4bf", waveformPreview: null, originalFileName: "mint-bell-loop.wav",      ownerUserId: null, libraryStatus: "ready" },
+  { id: "a9", name: "Rust Texture Sweep", color: "#fb923c", category: "FX",      bpm: 110, durationMs: 5000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/rust-texture-sweep.wav",  sortName: "rust texture sweep", mimeType: "audio/wav", byteSize: 0, dominantColor: "#fb923c", waveformPreview: null, originalFileName: "rust-texture-sweep.wav",  ownerUserId: null, libraryStatus: "ready" },
+  { id: "b1", name: "Velvet Clap Grid",   color: "#a78bfa", category: "Perc",    bpm: 124, durationMs: 4000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/velvet-clap-grid.wav",    sortName: "velvet clap grid",   mimeType: "audio/wav", byteSize: 0, dominantColor: "#a78bfa", waveformPreview: null, originalFileName: "velvet-clap-grid.wav",    ownerUserId: null, libraryStatus: "ready" },
+  { id: "b2", name: "Warm Organ Stab",    color: "#86efac", category: "Keys",    bpm: 88,  durationMs: 6000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/warm-organ-stab.wav",     sortName: "warm organ stab",    mimeType: "audio/wav", byteSize: 0, dominantColor: "#86efac", waveformPreview: null, originalFileName: "warm-organ-stab.wav",     ownerUserId: null, libraryStatus: "ready" },
+  { id: "b3", name: "Wave Ribbon Lead",   color: "#38bdf8", category: "Lead",    bpm: 128, durationMs: 8000,  isLoop: true, sourceKind: "seeded", fileUrl: "", fileKey: "seeded/wave-ribbon-lead.wav",    sortName: "wave ribbon lead",   mimeType: "audio/wav", byteSize: 0, dominantColor: "#38bdf8", waveformPreview: null, originalFileName: "wave-ribbon-lead.wav",    ownerUserId: null, libraryStatus: "ready" },
+];
+
+// Sessions en mémoire (temporaires, nettoyées après 24h)
+const sessionSamples = new Map<string, typeof seededSamples>();
 
 function sanitizeFileStem(fileName: string) {
   return fileName
@@ -45,35 +48,37 @@ function getExtensionForMimeType(mimeType: string) {
 }
 
 export const appRouter = router({
-  // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
-  auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
-    }),
-  }),
-  library: router({
-    list: publicProcedure.query(async ({ ctx }) => {
-      const samples = await listLibrarySamples(ctx.user?.id ?? null);
-      const usage = await getLibraryUsage(ctx.user?.id ?? null);
 
-      return {
-        samples,
-        usage,
-        reservedShare: {
-          seeded: 0.33,
-          user: 0.67,
-        },
-      };
-    }),
-    importBase64: protectedProcedure
+  // Auth simplifié — pas de vrai login, juste null
+  auth: router({
+    me: publicProcedure.query(() => null),
+    logout: publicProcedure.mutation(() => ({ success: true } as const)),
+  }),
+
+  library: router({
+    list: publicProcedure
+      .input(z.object({ sessionId: z.string().optional() }).optional())
+      .query(({ input }) => {
+        const sessionId = input?.sessionId;
+        const userSamples = sessionId ? (sessionSamples.get(sessionId) ?? []) : [];
+        const allSamples = [...seededSamples, ...userSamples];
+
+        return {
+          samples: allSamples,
+          usage: {
+            totalBytes: userSamples.reduce((acc, s) => acc + s.byteSize, 0),
+            seededBytes: 0,
+            userBytes: userSamples.reduce((acc, s) => acc + s.byteSize, 0),
+          },
+          reservedShare: { seeded: 0.33, user: 0.67 },
+        };
+      }),
+
+    importBase64: publicProcedure
       .input(
         z.object({
+          sessionId: z.string().min(8),
           name: z.string().min(2).max(180),
           category: z.string().min(2).max(80),
           mimeType: z.string().min(3).max(120),
@@ -86,7 +91,7 @@ export const appRouter = router({
           originalFileName: z.string().min(1).max(255),
         }),
       )
-      .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ input }) => {
         const extension = getExtensionForMimeType(input.mimeType);
         if (!extension) {
           throw new TRPCError({
@@ -96,89 +101,46 @@ export const appRouter = router({
         }
 
         const buffer = Buffer.from(input.base64Data, "base64");
-
-        if (!buffer.byteLength) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Le fichier audio importé est vide.",
-          });
-        }
-
-        if (buffer.byteLength > MAX_UPLOAD_BYTES) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Le fichier audio dépasse la taille maximale autorisée.",
-          });
-        }
+        if (!buffer.byteLength) throw new TRPCError({ code: "BAD_REQUEST", message: "Fichier vide." });
+        if (buffer.byteLength > MAX_UPLOAD_BYTES) throw new TRPCError({ code: "BAD_REQUEST", message: "Fichier trop grand (max 24 Mo)." });
 
         const stem = sanitizeFileStem(input.originalFileName || input.name) || "sample";
-        const placeholderKey = `samploop/pending/${ctx.user.id}/${crypto.randomUUID()}.${extension}`;
-        const placeholderUrl = `pending://${placeholderKey}`;
+        const fileKey = `temp/${input.sessionId}/${crypto.randomUUID().slice(0, 8)}-${stem}.${extension}`;
 
-        let pendingRecord: Awaited<ReturnType<typeof createPendingAudioSample>> | undefined;
-        try {
-          pendingRecord = await createPendingAudioSample({
-            ownerUserId: ctx.user.id,
-            sourceKind: "user_upload",
-            name: input.name,
-            sortName: normalizeSortName(input.name),
-            category: input.category,
-            mimeType: input.mimeType,
-            waveformPreview: input.waveformPreview ?? null,
-            dominantColor: input.dominantColor ?? null,
-            bpm: input.bpm ?? null,
-            durationMs: input.durationMs,
-            byteSize: buffer.byteLength,
-            isLoop: input.isLoop ? 1 : 0,
-            originalFileName: input.originalFileName,
-            fileKeyPlaceholder: placeholderKey,
-            fileUrlPlaceholder: placeholderUrl,
-          });
-        } catch (error) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message:
-              error instanceof Error
-                ? `Impossible de préparer l’import du sample en base : ${error.message}`
-                : "Impossible de préparer l’import du sample en base.",
-          });
-        }
+        const upload = await storagePut(fileKey, buffer, input.mimeType);
 
-        let upload: Awaited<ReturnType<typeof storagePut>>;
-        try {
-          upload = await storagePut(`samploop/audio/${ctx.user.id}/${stem}.${extension}`, buffer, input.mimeType);
-        } catch (error) {
-          try {
-            await deleteAudioSample(pendingRecord.id);
-          } catch (cleanupError) {
-            console.error("[Samploop] Failed to rollback pending sample after storage error", cleanupError);
-          }
+        const newSample = {
+          id: crypto.randomUUID(),
+          name: input.name,
+          color: input.dominantColor ?? "#f59e0b",
+          category: input.category,
+          bpm: input.bpm ?? null,
+          durationMs: input.durationMs,
+          isLoop: input.isLoop,
+          sourceKind: "user_upload",
+          fileUrl: upload.url,
+          fileKey: upload.key,
+          sortName: input.name.toLowerCase(),
+          mimeType: input.mimeType,
+          byteSize: buffer.byteLength,
+          dominantColor: input.dominantColor ?? null,
+          waveformPreview: input.waveformPreview ?? null,
+          originalFileName: input.originalFileName,
+          ownerUserId: null,
+          libraryStatus: "ready",
+        };
 
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: error instanceof Error ? `Échec de l’envoi du sample vers le stockage : ${error.message}` : "Échec de l’envoi du sample vers le stockage.",
-          });
-        }
+        // Stocker en mémoire pour cette session
+        const existing = sessionSamples.get(input.sessionId) ?? [];
+        sessionSamples.set(input.sessionId, [...existing, newSample]);
 
-        try {
-          const created = await finalizePendingAudioSampleStorage(pendingRecord.id, {
-            fileKey: upload.key,
-            fileUrl: upload.url,
-          });
+        // Nettoyage automatique après 24h
+        setTimeout(() => {
+          const current = sessionSamples.get(input.sessionId) ?? [];
+          sessionSamples.set(input.sessionId, current.filter(s => s.id !== newSample.id));
+        }, 24 * 60 * 60 * 1000);
 
-          return {
-            sample: created,
-            uploaded: true,
-          };
-        } catch (error) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message:
-              error instanceof Error
-                ? `Le sample a été envoyé au stockage, mais sa finalisation en base a échoué : ${error.message}`
-                : "Le sample a été envoyé au stockage, mais sa finalisation en base a échoué.",
-          });
-        }
+        return { sample: newSample, uploaded: true };
       }),
   }),
 });
