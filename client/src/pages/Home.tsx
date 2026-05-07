@@ -50,6 +50,7 @@ import {
   Upload,
   Volume2,
   Waves,
+  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -377,6 +378,17 @@ export default function Home() {
                   ))}
                 </select>
               </label>
+              <a
+                href="https://ko-fi.com/s/febe52650f"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ghost-icon"
+                aria-label="Version mobile"
+                title="Télécharger l'application mobile"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+              >
+                <Smartphone size={18} />
+              </a>
               <button className="ghost-icon" aria-label={t("viewLibrary")}>
                 <Library size={18} />
               </button>
