@@ -89,18 +89,24 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function listLibrarySamples(_userId?: number | null) {
+export async function listLibrarySamples(userId?: number | null) {
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot list samples: database not available");
     return [];
   }
 
-  // Auth est désactivée — on retourne tous les samples prêts, toutes sources confondues.
+  const visibilityFilter = userId
+    ? and(
+        eq(audioSamples.libraryStatus, "ready"),
+        or(eq(audioSamples.sourceKind, "seeded"), eq(audioSamples.ownerUserId, userId)),
+      )
+    : and(eq(audioSamples.libraryStatus, "ready"), eq(audioSamples.sourceKind, "seeded"));
+
   return db
     .select()
     .from(audioSamples)
-    .where(eq(audioSamples.libraryStatus, "ready"))
+    .where(visibilityFilter)
     .orderBy(asc(audioSamples.sortName), desc(audioSamples.createdAt));
 }
 
