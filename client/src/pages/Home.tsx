@@ -13,7 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { getLoginUrl } from "@/const";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useSamploopEngine } from "@/hooks/useSamploopEngine";
 import {
@@ -142,37 +141,22 @@ function TrackWave({
 }
 
 export default function Home() {
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
   const { locale, locales, localeMeta, setLocale, t } = useLanguage();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const trpcUtils = trpc.useUtils();
-  // Session ID local — identifiant unique par navigateur, stocké en localStorage
-  const [sessionId] = useState<string>(() => {
-    if (typeof window === "undefined") return crypto.randomUUID();
-    const stored = localStorage.getItem("samploop_session_id");
-    if (stored) return stored;
-    const id = crypto.randomUUID();
-    localStorage.setItem("samploop_session_id", id);
-    return id;
-  });
   const [query, setQuery] = useState("");
   const [selectedTrack, setSelectedTrack] = useState<number>(1);
   const [effectsTrackId, setEffectsTrackId] = useState<number | null>(null);
   const [tracks, setTracks] = useState<TrackState[]>(() => trackColors.map((color, index) => createEmptyTrack(index + 1, color)));
 
-  const libraryQuery = trpc.library.list.useQuery({ sessionId }, {
+  const libraryQuery = trpc.library.list.useQuery(undefined, {
     staleTime: 20_000,
   });
 
-  const importMutation = trpc.library.importBase64.useMutation({
-    onSuccess: async () => {
-      await trpcUtils.library.list.invalidate();
-      toast.success(t("importSuccess"));
-    },
-    onError: (error) => {
-      toast.error(error.message || t("importFailed"));
-    },
-  });
+  // Samples importés localement (stockés dans le navigateur, pas de serveur)
+  const [localSamples, setLocalSamples] = useState<SamploopLibraryItem[]>([]);
+  const [importing, setImporting] = useState(false);
 
   const onTrackPlaybackChange = useCallback((trackId: number, playing: boolean) => {
     setTracks((current) =>
@@ -205,8 +189,10 @@ export default function Home() {
       waveformPreview: sample.waveformPreview,
     }));
 
-    return backendItems && backendItems.length > 0 ? backendItems : fallbackLibrarySeed;
-  }, [libraryQuery.data?.samples, t]);
+    const base = backendItems && backendItems.length > 0 ? backendItems : fallbackLibrarySeed;
+    // Ajouter les samples importés localement
+    return [...base, ...localSamples];
+  }, [libraryQuery.data?.samples, t, localSamples]);
 
   const visibleLibraryItems = useMemo(
     () => getAvailableLibraryItems(libraryItems, tracks, query),
@@ -305,61 +291,43 @@ export default function Home() {
       return;
     }
 
+    setImporting(true);
     try {
-      const base64Data = await fileToBase64(file);
+      // Créer une URL locale (object URL) — pas de serveur, tout dans le navigateur
       const audioUrl = URL.createObjectURL(file);
       const audio = new Audio(audioUrl);
 
-      audio.addEventListener(
-        "loadedmetadata",
-        async () => {
-          const durationMs = Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : 1000;
+      const addSample = (durationMs: number) => {
+        const newSample: SamploopLibraryItem = {
+          id: crypto.randomUUID(),
+          name: file.name.replace(/\.[^.]+$/, ""),
+          color: colorFromName(file.name),
+          category: "Imported",
+          bpm: 0,
+          duration: formatDuration(durationMs),
+          audioUrl,
+          isLoop: true,
+          waveformPreview: estimateWaveformPreview(file),
+        };
+        setLocalSamples((prev) => [...prev, newSample]);
+        toast.success(t("importSuccess"));
+        setImporting(false);
+      };
 
-          await importMutation.mutateAsync({
-            sessionId,
-            name: file.name.replace(/\.[^.]+$/, ""),
-            category: "Imported",
-            mimeType: file.type,
-            base64Data,
-            durationMs,
-            bpm: null,
-            isLoop: true,
-            dominantColor: colorFromName(file.name),
-            waveformPreview: estimateWaveformPreview(file),
-            originalFileName: file.name,
-          });
+      audio.addEventListener("loadedmetadata", () => {
+        const durationMs = Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : 1000;
+        addSample(durationMs);
+      }, { once: true });
 
-          URL.revokeObjectURL(audioUrl);
-        },
-        { once: true },
-      );
-
-      audio.addEventListener(
-        "error",
-        async () => {
-          await importMutation.mutateAsync({
-            sessionId,
-            name: file.name.replace(/\.[^.]+$/, ""),
-            category: "Imported",
-            mimeType: file.type,
-            base64Data,
-            durationMs: 1000,
-            bpm: null,
-            isLoop: true,
-            dominantColor: colorFromName(file.name),
-            waveformPreview: estimateWaveformPreview(file),
-            originalFileName: file.name,
-          });
-
-          URL.revokeObjectURL(audioUrl);
-        },
-        { once: true },
-      );
+      audio.addEventListener("error", () => {
+        addSample(1000);
+      }, { once: true });
 
       audio.load();
     } catch (error) {
       console.error(error);
       toast.error(t("importPreparationFailed"));
+      setImporting(false);
     }
   };
 
@@ -448,9 +416,9 @@ export default function Home() {
 
           <div className="library-toolbar">
             <input ref={inputRef} type="file" accept=".wav,.mp3,.ogg,.webm,audio/*" hidden onChange={handleFileSelection} />
-            <button className="action-pill primary-pill" type="button" onClick={handleImportClick} disabled={importMutation.isPending}>
+            <button className="action-pill primary-pill" type="button" onClick={handleImportClick} disabled={importing}>
               <Upload size={15} />
-              {importMutation.isPending ? t("importing") : t("importSound")}
+              {importing ? t("importing") : t("importSound")}
             </button>
             <button className="action-pill" type="button">
               A–Z
