@@ -1,7 +1,7 @@
 Business Source License 1.1
 
 Licensor:             lumomana
-Licensed Work:        Samploop Mobile
+Licensed Work:        Samploop Web
                       Copyright (c) 2025 lumomana. All rights reserved.
 Additional Use Grant: You may use, copy, modify, and distribute this software
                       for non-commercial and personal purposes only.
